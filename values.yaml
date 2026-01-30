@@ -1,0 +1,55 @@
+# Default values for helm-gh-actions-runner.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+gha-runner-scale-set-controller:
+  image:
+    repository: "ghcr.io/actions/gha-runner-scale-set-controller"
+
+gha-runner-scale-set:
+  githubConfigUrl: "https://<hostname>/<org>"
+  githubConfigSecret: github-api-secret
+
+  ## name of the runner scale set to create. Defaults to the helm release name.
+  # runnerScaleSetName: build-runner
+
+  controllerServiceAccount:
+    namespace: arc-system
+    name: <release>-gha-rs-controller
+
+  # minRunners: 1
+  maxRunners: 2
+  
+  template:
+    spec:
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:latest
+          resources:
+            requests:
+              cpu: '250m'
+              memory: '1Gi'
+          command: ["/home/runner/run.sh"]
+          env:
+            - name: GITHUB_ACTIONS_RUNNER_TLS_NO_VERIFY
+              value: "1"
+            - name: http_proxy
+              value: "http://<proxy-hostname>:<proxy-port>"
+            - name: https_proxy
+              value: "http://<proxy-hostname>:<proxy-port>"
+            - name: no_proxy
+              value: "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,44.0.0.0/8,.svc,.cluster.local,.eks.amazonaws.com"
+            - name: HTTP_PROXY
+              value: "http://<proxy-hostname>:<proxy-port>"
+            - name: HTTPS_PROXY
+              value: "http://<proxy-hostname>:<proxy-port>"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,44.0.0.0/8,.svc,.cluster.local,.eks.amazonaws.com"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: containers
+              mountPath: /var/lib/containers
+      volumes:
+        - name: containers
+          emptyDir: {}
