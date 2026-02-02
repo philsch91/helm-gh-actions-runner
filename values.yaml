@@ -45,6 +45,9 @@ gha-runner-scale-set:
               value: "http://<proxy-hostname>:<proxy-port>"
             - name: NO_PROXY
               value: "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,44.0.0.0/8,.svc,.cluster.local,.eks.amazonaws.com"
+          envFrom:
+            - secretRef:
+                name: runner-env-secret
           securityContext:
             privileged: true
           volumeMounts:
@@ -53,3 +56,15 @@ gha-runner-scale-set:
       volumes:
         - name: containers
           emptyDir: {}
+
+externalSecretsEnvs:
+  - name: runner-env-secret
+    storeName: cluster-secretstore
+    key: github/actions/runner-secrets
+    refreshInterval: 168h
+
+secretEnvs:
+  - name: name1
+    value: value1
+  - name: name2
+    value: value2
