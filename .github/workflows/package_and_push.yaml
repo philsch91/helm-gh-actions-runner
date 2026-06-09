@@ -1,0 +1,88 @@
+name: Package and Push Chart
+
+on: 
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number for the chart"
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.ref }}
+
+# env:
+#   ENV_VAR1: "${{ secrets.ENV_VAR1 }}"
+#   ENV_VAR2: "${{ secrets.ENV_VAR2 }}"
+
+jobs:    
+  package-push:
+    runs-on: [ gha-runner-scale-set-build ]
+    # env:
+    #   ENV_VAR3: "ENV_VAR3_VALUE"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.RUNNER_PAT }}
+
+      - name: AWS ECR Helm Registry Login
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -e
+          export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" $(aws sts assume-role --role-arn ${{ secrets.AWS_ROLE_ARN_ECR_PUSHPULL }} --role-session-name GithubActionsRunner --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text))
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | helm registry login --username AWS --password-stdin ${{ secrets.AWS_ECR }}
+
+      # - name: Helm Repo Config
+      #   run: |
+      #     set -e
+      #     helm repo add local-helm-repo oci://${{ secrets.AWS_ECR }}/helm
+      #     helm repo update local-helm-repo
+
+      - name: Helm Dependency Update
+        run: |
+          set -e
+          helm dependency update .
+          helm dependency list .
+
+      - name: Helm Packaging
+        run: |
+          set -e
+          mkdir -p packaged
+          rm -f packaged/*.tgz || true
+
+          # find . -maxdepth 2 -type f -path './app-*/values.*.yaml' -print -delete || true
+
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "Packaging with version ${{ github.event.inputs.version }}"
+            helm package . --destination packaged --version "${{ github.event.inputs.version }}"
+          else
+            helm package . --destination packaged
+          fi
+
+          CHART_FILE=$(ls packaged/*.tgz | head -n1 || true)
+          if [ -z "$CHART_FILE" ]; then
+            echo "No chart artifact found in packaged/"; ls -la packaged; exit 1
+          fi
+          echo "CHART_FILE=$CHART_FILE" >> $GITHUB_ENV
+
+      - name: Helm Show Chart Info
+        run: |
+          set -e
+          echo "Packaged chart: $CHART_FILE"
+          ls -l packaged
+          helm show chart "$CHART_FILE" || true
+
+      - name: Helm Push
+        run: |
+          set -e
+          echo "Pushing $CHART_FILE to ECR (OCI)"
+          helm push "$CHART_FILE" oci://${{ secrets.AWS_ECR }}/helm
+
+      - name: AWS ECR Helm Registry Logout
+        run: helm registry logout ${{ secrets.AWS_ECR }}

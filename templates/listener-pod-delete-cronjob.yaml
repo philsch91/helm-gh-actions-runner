@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: "gh-actions-runner-listener-pod-delete-cronjob"
+spec:
+  schedule: "{{ .Values.listenerPodDeleteCronjob.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: "{{ .Values.serviceAccount.name }}"
+          containers:
+            - name: "gh-actions-runner-listener-pod-delete-cronjob-container"
+              image: "{{ .Values.listenerPodDeleteCronjob.image.registry }}/{{ .Values.listenerPodDeleteCronjob.image.repository }}:{{ .Values.listenerPodDeleteCronjob.image.tag }}"
+              imagePullPolicy: "{{ .Values.listenerPodDeleteCronjob.image.pullPolicy }}"
+              command:
+                - /bin/bash
+                - -c
+                - |-
+                  POD_STATES=$(kubectl -n {{ .Release.Namespace }} get pod | grep listener | awk '{print $1";"$3}')
+                  echo "$POD_STATES" | while IFS= read -r PS; do
+                    NAME=$(echo $PS | awk -F ';' '{print $1}')
+                    STATUS=$(echo $PS | awk -F ';' '{print $2}')
+                    if [ "$STATUS" = "Error" ]; then
+                      kubectl -n {{ .Release.Namespace }} delete pod $NAME 
+                    fi
+                  done
+                  curl -Ss --max-time 5 http://localhost:15020/quitquitquit || true
+          restartPolicy: Never
