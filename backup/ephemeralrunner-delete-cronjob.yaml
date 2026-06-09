@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: "gh-actions-runner-ephemeralrunner-delete-cronjob"
+spec:
+  schedule: "{{ .Values.ephemeralRunnerDeleteCronJob.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: "{{ .Values.serviceAccount.name }}"
+          containers:
+            - name: "gh-actions-runner-ephemeralrunner-delete-cronjob-container"
+              image: "{{ .Values.ephemeralRunnerDeleteCronJob.image.registry }}/{{ .Values.ephemeralRunnerDeleteCronJob.image.repository }}:{{ .Values.ephemeralRunnerDeleteCronJob.image.tag }}"
+              imagePullPolicy: "{{ .Values.ephemeralRunnerDeleteCronJob.image.pullPolicy }}"
+              command:
+                - /bin/bash
+                - -c
+                - |-
+                  echo "For every ephemeralrunner object in status other than Error, Failed, Pending, Deleting and Terminating, a pod should be running. If there is no pod running, the ephemeralrunner will be deleted for a recreation."
+                  EPHEM_RUNNERS=$(kubectl -n {{ .Release.Namespace }} get ephemeralrunner -o jsonpath='{range .items[*]}{@.metadata.name}{";"}{@.status.phase}{";"}{@.status.runnerName}{"\n"}{end}')
+                  echo "$EPHEM_RUNNERS" | while IFS= read -r ER; do
+                    NAME=$(echo $ER | awk -F ';' '{print $1}')
+                    STATUS=$(echo $ER | awk -F ';' '{print $2}')
+                    RUNNER_NAME=$(echo $ER | awk -F ';' '{print $3}')
+                    echo "Checking ephemeralrunner $NAME with status $STATUS"
+
+                    if [ "$STATUS" = "Error" ] || [ "$STATUS" = "Failed" ]; then
+                      echo "Deleting ephemeralrunner $NAME with status $STATUS"
+                      kubectl -n {{ .Release.Namespace }} delete ephemeralrunner $NAME
+                    fi
+
+                    if [ "$STATUS" != "Error" ] && [ "$STATUS" != "Failed" ] && [ "$STATUS" != "Pending" ] && [ "$STATUS" != "Deleting" ] && [ "$STATUS" != "Terminating" ]; then
+                      echo "Check running pod for ephemeralrunner $NAME"
+                      POD_NAMES=$(kubectl -n {{ .Release.Namespace }} get pod -o jsonpath='{range .items[*]}{@.metadata.name}{" "}{end}')
+                      POD_NAMES=$(printf '%s\n' "$POD_NAMES" | tr '\n' ' ')
+                      case " $POD_NAMES " in
+                        *" $NAME "*)
+                          # found
+                          ;;
+                        *)
+                          echo "Deleting ephemeralrunner $NAME because no pod is running"
+                          kubectl -n {{ .Release.Namespace }} delete ephemeralrunner $NAME
+                          ;;
+                      esac
+                    fi
+                  done
+                  curl -Ss --max-time 5 -X POST http://localhost:15020/quitquitquit || true
+          restartPolicy: Never
