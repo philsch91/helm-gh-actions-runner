@@ -13,7 +13,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: "gh-actions-runner-delete-role-binding"
+  name: "gh-actions-runner-delete-rolebinding"
 subjects:
   - kind: ServiceAccount
     name: "{{ .Values.serviceAccount.name }}"
