@@ -72,7 +72,7 @@ secretEnvs:
 serviceAccount:
   name: "gh-actions-runner-monitor-sa"
 
-listenerPodDeleteCronjob:
+listenerPodDeleteCronJob:
   schedule: "*/5 * * * *" # every 5 minutes
   image:
     registry: "registry.k8s.io" # k8s.gcr.io
@@ -80,7 +80,7 @@ listenerPodDeleteCronjob:
     tag: "v1.36.1"
     pullPolicy: "IfNotPresent"
 
-ephemeralRunnerDeleteCronjob:
+ephemeralRunnerDeleteCronJob:
   schedule: "*/5 * * * *" # every 5 minutes
   image:
     registry: "registry.k8s.io" # k8s.gcr.io
